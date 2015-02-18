@@ -10,6 +10,8 @@ import scala.collection.immutable.{IndexedSeq,_}
 import scala.collection.mutable.Builder
 import java.lang.Math.{max => mmax, min => mmin}
 
+import scalaz._
+
 object Vector extends SeqFactory[Vector] {
   @inline implicit def canBuildFrom[A]: CanBuildFrom[Coll, A, Vector[A]] =
     ReusableCBF.asInstanceOf[CanBuildFrom[Coll, A, Vector[A]]]
@@ -24,7 +26,37 @@ object Vector extends SeqFactory[Vector] {
     data(0) = elem.asInstanceOf[AnyRef]
     new Vector[A](data, 1, 32)
   }
+  implicit val instance = new MonadPlus[Vector] with Traverse[Vector] with IsEmpty[Vector]{
+    override def point[A](a: => A) =
+      Vector(a)
+    override def bind[A, B](fa: Vector[A])(f: A => Vector[B]) =
+      fa flatMap f
+    override def empty[A] =
+      Vector.empty[A]
+    override def plus[A](a: Vector[A], b: => Vector[A]) =
+      a ++ b
+    override def map[A, B](fa: Vector[A])(f: A => B) =
+      fa map f
+    override def traverseImpl[G[_]: Applicative, A, B](fa: Vector[A])(f: A => G[B]) =
+      Functor[G].map(Traverse[IList].traverse(IList(fa: _*))(f))(Foldable[IList].to(_))
+    override def foldLeft[A, B](fa: Vector[A], z: B)(f: (B, A) => B) =
+      fa.foldLeft(z)(f)
+    override def foldRight[A, B](fa: Vector[A], z: => B)(f: (A, => B) => B) =
+      fa.foldRight(z)((a, b) => f(a, b))
+    override def isEmpty[A](fa: Vector[A]) =
+      fa.isEmpty
+  }
 
+  import scalaz.std.list._
+
+  implicit def vectorEqual[A: Equal]: Equal[Vector[A]] =
+    Equal[List[A]].contramap(_.toList)
+
+  implicit def vectorMonoid[A]: Monoid[Vector[A]] =
+    Monoid.instance(_ ++ _, empty[A])
+
+  implicit def vectorShow[A: Show]: Show[Vector[A]] =
+    Contravariant[Show].contramap(Show[List[A]])(_.toList)
 }
 
 final class VectorBuilder[A]() extends Builder[A,Vector[A]] {
